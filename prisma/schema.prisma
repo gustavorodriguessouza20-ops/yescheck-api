@@ -1,0 +1,179 @@
+// YesCheck — Prisma Schema
+// Fonte da verdade do banco de dados PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum UserRole {
+  DRIVER
+  MANAGER
+  ADMIN
+}
+
+enum InspectionStatus {
+  IN_PROGRESS
+  APPROVED   // YesCheck ✓ — veículo liberado
+  REJECTED   // Não conforme — veículo bloqueado
+}
+
+enum InspectionItemStatus {
+  OK
+  ISSUE
+  SKIPPED
+}
+
+enum CompanyPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ─────────────────────────────────────────
+// TABELAS
+// ─────────────────────────────────────────
+
+model Company {
+  id         String      @id @default(uuid())
+  name       String
+  cnpj       String      @unique
+  plan       CompanyPlan @default(FREE)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  users      User[]
+  vehicles   Vehicle[]
+  checklists Checklist[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(DRIVER)
+  cnh          String?  // CNH do motorista
+  phone        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  inspections   Inspection[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  companyId   String   @map("company_id")
+  plate       String   @unique
+  model       String
+  brand       String
+  year        Int
+  kmCurrent   Int      @default(0) @map("km_current")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  inspections Inspection[]
+
+  @@map("vehicles")
+}
+
+model Checklist {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company     Company         @relation(fields: [companyId], references: [id])
+  items       ChecklistItem[]
+  inspections Inspection[]
+
+  @@map("checklists")
+}
+
+model ChecklistItem {
+  id            String  @id @default(uuid())
+  checklistId   String  @map("checklist_id")
+  name          String
+  order         Int     @default(0)
+  required      Boolean @default(true)
+  requiresPhoto Boolean @default(false) @map("requires_photo")
+
+  checklist       Checklist        @relation(fields: [checklistId], references: [id])
+  inspectionItems InspectionItem[]
+
+  @@map("checklist_items")
+}
+
+// Tabela central — cada inspeção é um registro imutável
+model Inspection {
+  id          String           @id @default(uuid())
+  vehicleId   String           @map("vehicle_id")
+  driverId    String           @map("driver_id")
+  checklistId String           @map("checklist_id")
+  status      InspectionStatus @default(IN_PROGRESS)
+  latitude    Decimal?         @db.Decimal(10, 7)
+  longitude   Decimal?         @db.Decimal(10, 7)
+  address     String?          // endereço resolvido pelo geocoding
+  signatureUrl String?         @map("signature_url")
+  notes       String?
+  startedAt   DateTime         @default(now()) @map("started_at")
+  completedAt DateTime?        @map("completed_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  vehicle   Vehicle          @relation(fields: [vehicleId], references: [id])
+  driver    User             @relation(fields: [driverId], references: [id])
+  checklist Checklist        @relation(fields: [checklistId], references: [id])
+  items     InspectionItem[]
+
+  @@map("inspections")
+}
+
+model InspectionItem {
+  id              String               @id @default(uuid())
+  inspectionId    String               @map("inspection_id")
+  checklistItemId String               @map("checklist_item_id")
+  status          InspectionItemStatus @default(OK)
+  observation     String?
+  photoUrl        String?              @map("photo_url")
+  answeredAt      DateTime?            @map("answered_at")
+
+  inspection    Inspection    @relation(fields: [inspectionId], references: [id])
+  checklistItem ChecklistItem @relation(fields: [checklistItemId], references: [id])
+
+  @@map("inspection_items")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("refresh_tokens")
+}
