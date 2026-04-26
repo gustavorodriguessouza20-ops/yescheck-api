@@ -19,35 +19,31 @@ export async function buildApp() {
     logger: { level: process.env.NODE_ENV === 'production' ? 'warn' : 'info' },
   })
 
-  // CORS — suporta múltiplas origens via variável separada por vírgula
+  // CORS — suporta múltiplas origens (comma-separated) + qualquer *.vercel.app
   const allowedOrigins = (process.env.FRONTEND_URL ?? 'http://localhost:5173')
     .split(',')
-    .map(o => o.trim())
+    .map((o: string) => o.trim())
     .filter(Boolean)
 
   await app.register(cors, {
-    origin: (origin, cb) => {
-      // Permite requests sem origin (mobile, Postman, server-to-server)
+    origin: (origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => {
       if (!origin) return cb(null, true)
       if (allowedOrigins.includes(origin)) return cb(null, true)
-      // Permite qualquer subdomínio *.vercel.app para preview deploys
       if (origin.endsWith('.vercel.app')) return cb(null, true)
       cb(new Error('Not allowed by CORS'), false)
     },
     credentials: true,
   })
 
-  // JWT
-  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET não definido')
+  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET nao definido')
   await app.register(jwt, { secret: process.env.JWT_SECRET })
 
   await app.register(multipart, {
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    limits: { fileSize: 10 * 1024 * 1024 },
   })
 
   await app.register(authenticate)
 
-  // Rotas
   await app.register(authRoutes,       { prefix: '/auth' })
   await app.register(userRoutes,       { prefix: '/users' })
   await app.register(vehicleRoutes,    { prefix: '/vehicles' })
@@ -58,12 +54,11 @@ export async function buildApp() {
 
   app.get('/health', async () => ({ status: 'ok', service: 'yescheck-api', ts: new Date() }))
 
-  // Error handler global
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof ZodError) {
       return reply.status(422).send({
         error: 'VALIDATION_ERROR',
-        message: 'Dados inválidos',
+        message: 'Dados invalidos',
         details: error.flatten().fieldErrors,
       })
     }
